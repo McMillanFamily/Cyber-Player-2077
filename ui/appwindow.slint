@@ -1,6 +1,12 @@
 // CYBER-DECK // AUDIO
 
-component CyberButton inherits Rectangle {
+// Flat neon button with a hover/press glow
+
+//For who ever comes here next update this counter
+//I hate this 
+//Hours wasted here 4
+
+component CyberButton inherits Rectangle { //Cyber buttons YAY! :D
     in property <string> label;
     in property <color> accent;
     in property <color> fill;
@@ -18,18 +24,19 @@ component CyberButton inherits Rectangle {
         height: parent.height;
         text: root.label;
         color: root.accent;
-        font-family: "monospace";
+        font-family: "monospace"; 
         font-size: 14px;
         horizontal-alignment: center;
         vertical-alignment: center;
-    }
+    } //this looks so much like CSS
 
     ta := TouchArea {
         clicked => { root.clicked(); }
     }
 }
 
-// Square play/pause button with drawn icons (no font glyph dependency)
+// Play/pause button. The icons are drawn by hand so we don't depend on
+// whatever glyphs the system font happens to have.
 component PlayPauseButton inherits Rectangle {
     in property <bool> playing;
     in property <color> accent: #00f3ff;
@@ -42,7 +49,7 @@ component PlayPauseButton inherits Rectangle {
               : #081c24;
     animate background { duration: 100ms; }
 
-    // Play triangle
+    // play triangle (nudged 2px right so it looks centered)
     if !root.playing : Path {
         x: (parent.width - self.width) / 2 + 2px;
         y: (parent.height - self.height) / 2;
@@ -54,7 +61,7 @@ component PlayPauseButton inherits Rectangle {
         fill: root.accent;
     }
 
-    // Pause bars
+    // pause bars
     if root.playing : Rectangle {
         x: parent.width / 2 - 8px;
         y: parent.height / 2 - 8px;
@@ -78,37 +85,42 @@ component PlayPauseButton inherits Rectangle {
 export component AppWindow inherits Window {
     title: "CYBER-DECK // AUDIO";
     width: 480px;
-    height: 320px;
+    height: 326px;
     no-frame: true;
     background: #090a0f;
 
-    in-out property <string> track-name: "NO_SIGNAL // LOAD TRACK";
-    in-out property <bool> is-playing: false;
-    in-out property <float> progress: 0;          // 0.0 .. 1.0
-    in-out property <string> elapsed-text: "0:00";
-    in-out property <string> total-text: "--:--";
+    in-out property <string> track: "NO_SIGNAL // LOAD TRACK";
+    in-out property <bool> playing: false;
+    in-out property <float> prog: 0;       // how far through the song, 0 to 1
+    in-out property <string> elapsed: "0:00";
+    in-out property <string> total: "--:--";
+    in-out property <float> vol: 0.8;      // 0 to 1
 
-    callback load-file();
-    callback toggle-play();
-    callback close-window();
-    callback start-drag();
-    callback seek(float);                          // fraction 0.0 .. 1.0
+    callback loadFile();
+    callback loadDir();
+    callback togglePlay();
+    callback next();
+    callback prev();
+    callback close();
+    callback startDrag();
+    callback seek(float);                  // 0 to 1 along the bar
+    callback setVol(float);                // 0 to 1 along the bar
 
-    // Phase drives the moving visualizer
+    // ticks forward while playing, which keeps the visualizer moving
     property <float> phase: 0;
     Timer {
         interval: 60ms;
-        running: root.is-playing;
+        running: root.playing;
         triggered => { root.phase = mod(root.phase + 0.4, 6.2832); }
     }
 
-    // Outer neon border
+    // outer neon frame
     Rectangle {
         border-width: 2px;
         border-color: #00f3ff;
         background: #0d1017;
 
-        // Faux glow: faint inner border
+        // a faint second border inside to fake a glow
         Rectangle {
             x: 3px;
             y: 3px;
@@ -122,7 +134,7 @@ export component AppWindow inherits Window {
             padding: 16px;
             spacing: 12px;
 
-            // Header bar (drag handle + close)
+            // top bar: grab it to drag the window, X to close
             HorizontalLayout {
                 height: 24px;
                 spacing: 8px;
@@ -144,7 +156,7 @@ export component AppWindow inherits Window {
                     TouchArea {
                         pointer-event(e) => {
                             if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
-                                root.start-drag();
+                                root.startDrag();
                             }
                         }
                     }
@@ -152,7 +164,7 @@ export component AppWindow inherits Window {
 
                 Rectangle {
                     width: 24px;
-                    background: close-ta.has-hover ? #ff4d85 : #ff0055;
+                    background: closeTa.has-hover ? #ff4d85 : #ff0055;
 
                     Text {
                         width: parent.width;
@@ -164,13 +176,13 @@ export component AppWindow inherits Window {
                         vertical-alignment: center;
                     }
 
-                    close-ta := TouchArea {
-                        clicked => { root.close-window(); }
+                    closeTa := TouchArea {
+                        clicked => { root.close(); }
                     }
                 }
             }
 
-            // Track readout
+            // current track name
             Rectangle {
                 height: 60px;
                 background: #05070a;
@@ -181,7 +193,7 @@ export component AppWindow inherits Window {
                     x: 12px;
                     width: parent.width - 24px;
                     height: parent.height;
-                    text: root.track-name;
+                    text: root.track;
                     color: #00f3ff;
                     font-family: "monospace";
                     font-size: 15px;
@@ -190,7 +202,7 @@ export component AppWindow inherits Window {
                 }
             }
 
-            // Visualizer
+            // bouncing bars (just a sine wave, not real audio analysis)
             HorizontalLayout {
                 height: 56px;
                 spacing: 4px;
@@ -198,7 +210,7 @@ export component AppWindow inherits Window {
                 for i in 24 : Rectangle {
                     Rectangle {
                         width: parent.width;
-                        height: root.is-playing
+                        height: root.playing
                             ? 8px + (Math.sin((i * 0.7 + root.phase) * 1rad) + 1) * 20px
                             : 4px;
                         y: parent.height - self.height;
@@ -208,16 +220,16 @@ export component AppWindow inherits Window {
                 }
             }
 
-            // Progress bar + timestamps
+            // progress bar and the two timestamps under it
             VerticalLayout {
                 height: 30px;
                 spacing: 2px;
 
-                // Click anywhere on the bar to seek
+                // click anywhere on the bar to jump there
                 Rectangle {
                     height: 14px;
 
-                    // Track
+                    // empty track
                     Rectangle {
                         x: 0px;
                         y: (parent.height - self.height) / 2;
@@ -228,11 +240,11 @@ export component AppWindow inherits Window {
                         border-color: #1f293a;
                     }
 
-                    // Fill (anchored to the left edge)
+                    // filled part, pinned to the left
                     Rectangle {
                         x: 0px;
                         y: (parent.height - self.height) / 2;
-                        width: parent.width * clamp(root.progress, 0, 1);
+                        width: parent.width * clamp(root.prog, 0, 1);
                         height: 6px;
                         background: #00f3ff;
                         animate width { duration: 100ms; }
@@ -247,14 +259,14 @@ export component AppWindow inherits Window {
 
                 HorizontalLayout {
                     Text {
-                        text: root.elapsed-text;
+                        text: root.elapsed;
                         color: #00f3ff;
                         font-family: "monospace";
                         font-size: 11px;
                     }
                     Rectangle { horizontal-stretch: 1; }
                     Text {
-                        text: root.total-text;
+                        text: root.total;
                         color: #ff0055;
                         font-family: "monospace";
                         font-size: 11px;
@@ -262,7 +274,7 @@ export component AppWindow inherits Window {
                 }
             }
 
-            // Control deck
+            // buttons
             HorizontalLayout {
                 height: 40px;
                 spacing: 12px;
@@ -271,13 +283,111 @@ export component AppWindow inherits Window {
                     label: "[ LOAD_FILE ]";
                     accent: #ff0055;
                     fill: #1a0b14;
-                    clicked => { root.load-file(); }
+                    clicked => { root.loadFile(); }
+                }
+
+                CyberButton {
+                    label: "[ LOAD_DIR ]";
+                    accent: #ff0055;
+                    fill: #1a0b14;
+                    clicked => { root.loadDir(); }
+                }
+
+                CyberButton {
+                    width: 40px;
+                    label: "<<";
+                    accent: #00f3ff;
+                    fill: #081c24;
+                    clicked => { root.prev(); }
                 }
 
                 PlayPauseButton {
                     width: 72px;
-                    playing: root.is-playing;
-                    clicked => { root.toggle-play(); }
+                    playing: root.playing;
+                    clicked => { root.togglePlay(); }
+                }
+
+                CyberButton {
+                    width: 40px;
+                    label: ">>";
+                    accent: #00f3ff;
+                    fill: #081c24;
+                    clicked => { root.next(); }
+                }
+            }
+
+            // volume: click or drag along the bar
+            HorizontalLayout {
+                height: 20px;
+                spacing: 10px;
+
+                Text {
+                    width: 32px;
+                    text: "VOL"; // VOLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLUUUUUUUUUUUUUUUUUUMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMEEEEEEEEEEEEEEEEEEEEE
+                    color: #ff0055;
+                    font-family: "monospace";
+                    font-size: 11px;
+                    vertical-alignment: center;     //Dont ask me why i had to remake this one block of code 50 times :)
+                }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+
+                    // empty track
+                    Rectangle {
+                        x: 0px;
+                        y: (parent.height - self.height) / 2;
+                        width: parent.width;
+                        height: 8px;
+                        background: #05070a;
+                        border-width: 1px;
+                        border-color: #1f293a;
+                    }
+
+                    // filled part, pinned to the left
+                    Rectangle {
+                        x: 0px;
+                        y: (parent.height - self.height) / 2;
+                        width: parent.width * clamp(root.vol, 0, 1);
+                        height: 8px;
+                        background: #ff0055;
+                    }
+
+                    // the little handle
+                    Rectangle {
+                        x: parent.width * clamp(root.vol, 0, 1) - self.width / 2;
+                        y: (parent.height - self.height) / 2;
+                        width: 6px;
+                        height: 16px;
+                        background: volTa.pressed ? #ffffff : #ff4d85;
+                    }
+
+                    volTa := TouchArea {
+                        // a plain click sets the volume right away...
+                        pointer-event(e) => {
+                            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                                root.vol = clamp(self.mouse-x / self.width, 0, 1);
+                                root.setVol(root.vol);
+                            }
+                        }
+                        // ...and dragging keeps updating it
+                        moved => {
+                            if (self.pressed) {
+                                root.vol = clamp(self.mouse-x / self.width, 0, 1);
+                                root.setVol(root.vol);
+                            }
+                        }
+                    }
+                }
+
+                Text {
+                    width: 40px;
+                    text: "\{Math.round(root.vol * 100)}%";
+                    color: #ff0055;
+                    font-family: "monospace";
+                    font-size: 11px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
                 }
             }
         }
