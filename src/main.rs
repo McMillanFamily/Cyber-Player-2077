@@ -1,18 +1,16 @@
 use std::{cell::RefCell, fs::File, io::BufReader, path::Path, time::Duration};
 
 use i_slint_backend_winit::WinitWindowAccessor;
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
+use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use slint::ComponentHandle;
 
 slint::include_modules!();
 
-
-// rodio's OutputStream is !Send, so the player lives in thread-local storage
-// on the UI thread. All access goes through the Slint event loop.
 struct Player {
     _stream: OutputStream, // must stay alive or audio stops
     handle: OutputStreamHandle,
     sink: Option<Sink>,
+    total: Option<Duration>, // None if the decoder can't tell us (common for some MP3s)
 }
 
 thread_local! {
@@ -26,6 +24,7 @@ fn init_player() -> Result<(), String> {
             _stream: stream,
             handle,
             sink: None,
+            total: None,
         });
     });
     Ok(())
@@ -34,6 +33,7 @@ fn init_player() -> Result<(), String> {
 fn load_track(path: &Path) -> Result<(), String> {
     let file = File::open(path).map_err(|e| e.to_string())?;
     let decoder = Decoder::new(BufReader::new(file)).map_err(|e| e.to_string())?;
+    let total = decoder.total_duration();
 
     PLAYER.with(|p| {
         let mut p = p.borrow_mut();
@@ -45,8 +45,14 @@ fn load_track(path: &Path) -> Result<(), String> {
         let sink = Sink::try_new(&player.handle).map_err(|e| e.to_string())?;
         sink.append(decoder);
         player.sink = Some(sink);
+        player.total = total;
         Ok::<(), String>(())
     })
+}
+
+fn fmt_time(d: Duration) -> String {
+    let secs = d.as_secs();
+    format!("{}:{:02}", secs / 60, secs % 60)
 }
 
 fn main() -> Result<(), slint::PlatformError> {
@@ -57,8 +63,6 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     // --- Load file -------------------------------------------------------
-    // The file dialog blocks, so run it on a worker thread and hop back to
-    // the UI thread with the chosen path.
     ui.on_load_file({
         let weak = ui.as_weak();
         move || {
@@ -79,7 +83,8 @@ fn main() -> Result<(), slint::PlatformError> {
                                 .map(|n| n.to_string_lossy().to_uppercase())
                                 .unwrap_or_default();
                             ui.set_track_name(format!("TRACK // {name}").into());
-                            ui.set_is_playing(true); // sink starts playing immediately
+                            ui.set_progress(0.0);
+                            ui.set_is_playing(true);
                         }
                         Err(e) => {
                             ui.set_track_name(format!("LOAD_ERR // {e}").into());
@@ -117,6 +122,19 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
+    // --- Seek (click on progress bar) -------------------------------------
+    ui.on_seek(|fraction: f32| {
+        PLAYER.with(|p| {
+            let p = p.borrow();
+            if let Some(player) = p.as_ref() {
+                if let (Some(sink), Some(total)) = (player.sink.as_ref(), player.total) {
+                    let target = total.mul_f32(fraction.clamp(0.0, 1.0));
+                    let _ = sink.try_seek(target);
+                }
+            }
+        });
+    });
+
     // --- Close -----------------------------------------------------------
     ui.on_close_window({
         let weak = ui.as_weak();
@@ -139,23 +157,35 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
-    // --- Reset the UI state when a track finishes on its own -------------
-    let end_timer = slint::Timer::default();
-    end_timer.start(slint::TimerMode::Repeated, Duration::from_millis(250), {
+    // --- Progress / end-of-track polling ---------------------------------
+    let progress_timer = slint::Timer::default();
+    progress_timer.start(slint::TimerMode::Repeated, Duration::from_millis(100), {
         let weak = ui.as_weak();
         move || {
             let Some(ui) = weak.upgrade() else { return };
-            if !ui.get_is_playing() {
-                return;
-            }
-            let finished = PLAYER.with(|p| {
-                p.borrow()
-                    .as_ref()
-                    .and_then(|pl| pl.sink.as_ref())
-                    .map(|s| s.empty())
-                    .unwrap_or(false)
+
+            let snapshot = PLAYER.with(|p| {
+                let p = p.borrow();
+                let player = p.as_ref()?;
+                let sink = player.sink.as_ref()?;
+                Some((sink.get_pos(), player.total, sink.empty()))
             });
-            if finished {
+            let Some((pos, total, finished)) = snapshot else { return };
+
+            ui.set_elapsed_text(fmt_time(pos).into());
+
+            match total {
+                Some(t) if !t.is_zero() => {
+                    ui.set_total_text(fmt_time(t).into());
+                    ui.set_progress((pos.as_secs_f32() / t.as_secs_f32()).min(1.0));
+                }
+                _ => {
+                    ui.set_total_text("--:--".into());
+                    ui.set_progress(0.0);
+                }
+            }
+
+            if finished && ui.get_is_playing() {
                 ui.set_is_playing(false);
             }
         }

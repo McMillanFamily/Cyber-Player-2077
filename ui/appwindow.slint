@@ -1,16 +1,18 @@
-component CyberButton inherits Rectangle{
+// CYBER-DECK // AUDIO
+
+component CyberButton inherits Rectangle {
     in property <string> label;
     in property <color> accent;
     in property <color> fill;
     callback clicked();
-    
+
     border-width: 1px;
     border-color: accent;
     background: ta.pressed ? accent.with-alpha(0.35)
               : ta.has-hover ? accent.with-alpha(0.18)
               : fill;
-    animate background { duration: 100ms;}
-    
+    animate background { duration: 100ms; }
+
     Text {
         width: parent.width;
         height: parent.height;
@@ -20,35 +22,84 @@ component CyberButton inherits Rectangle{
         font-size: 14px;
         horizontal-alignment: center;
         vertical-alignment: center;
-    } 
+    }
 
-    ta := TouchArea{
-        clicked => {root.clicked();}
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// Square play/pause button with drawn icons (no font glyph dependency)
+component PlayPauseButton inherits Rectangle {
+    in property <bool> playing;
+    in property <color> accent: #00f3ff;
+    callback clicked();
+
+    border-width: 1px;
+    border-color: accent;
+    background: ta.pressed ? accent.with-alpha(0.35)
+              : ta.has-hover ? accent.with-alpha(0.18)
+              : #081c24;
+    animate background { duration: 100ms; }
+
+    // Play triangle
+    if !root.playing : Path {
+        x: (parent.width - self.width) / 2 + 2px;
+        y: (parent.height - self.height) / 2;
+        width: 14px;
+        height: 16px;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        commands: "M 0 0 L 100 50 L 0 100 Z";
+        fill: root.accent;
+    }
+
+    // Pause bars
+    if root.playing : Rectangle {
+        x: parent.width / 2 - 8px;
+        y: parent.height / 2 - 8px;
+        width: 5px;
+        height: 16px;
+        background: root.accent;
+    }
+    if root.playing : Rectangle {
+        x: parent.width / 2 + 3px;
+        y: parent.height / 2 - 8px;
+        width: 5px;
+        height: 16px;
+        background: root.accent;
+    }
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
     }
 }
 
 export component AppWindow inherits Window {
     title: "CYBER-DECK // AUDIO";
     width: 480px;
-    height: 280px;
+    height: 320px;
     no-frame: true;
     background: #090a0f;
 
     in-out property <string> track-name: "NO_SIGNAL // LOAD TRACK";
     in-out property <bool> is-playing: false;
+    in-out property <float> progress: 0;          // 0.0 .. 1.0
+    in-out property <string> elapsed-text: "0:00";
+    in-out property <string> total-text: "--:--";
 
     callback load-file();
     callback toggle-play();
     callback close-window();
-    //fired when the header is pressed: call winit's drag_window() form Rust
     callback start-drag();
-    
-    //Phase drives the moving visualizer
-    property <float> phase: 0 ;
-    Timer{
+    callback seek(float);                          // fraction 0.0 .. 1.0
+
+    // Phase drives the moving visualizer
+    property <float> phase: 0;
+    Timer {
         interval: 60ms;
         running: root.is-playing;
-        triggered => { root.phase = mod(root.phase + 0.4, 6.2832)}
+        triggered => { root.phase = mod(root.phase + 0.4, 6.2832); }
     }
 
     // Outer neon border
@@ -88,17 +139,17 @@ export component AppWindow inherits Window {
                         font-weight: 800;
                         font-size: 12px;
                         vertical-alignment: center;
-                    }   
+                    }
 
                     TouchArea {
                         pointer-event(e) => {
-                            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left){
+                            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
                                 root.start-drag();
                             }
                         }
                     }
-            
                 }
+
                 Rectangle {
                     width: 24px;
                     background: close-ta.has-hover ? #ff4d85 : #ff0055;
@@ -110,35 +161,108 @@ export component AppWindow inherits Window {
                         color: #090a0f;
                         font-weight: 900;
                         horizontal-alignment: center;
-                        vertical-alignment: center; 
+                        vertical-alignment: center;
                     }
 
-                    close-ta := TouchArea{
-                        clicked => {root.close-window();}
+                    close-ta := TouchArea {
+                        clicked => { root.close-window(); }
                     }
+                }
+            }
+
+            // Track readout
+            Rectangle {
+                height: 60px;
+                background: #05070a;
+                border-width: 1px;
+                border-color: #1f293a;
+
+                Text {
+                    x: 12px;
+                    width: parent.width - 24px;
+                    height: parent.height;
+                    text: root.track-name;
+                    color: #00f3ff;
+                    font-family: "monospace";
+                    font-size: 15px;
+                    vertical-alignment: center;
+                    overflow: elide;
                 }
             }
 
             // Visualizer
             HorizontalLayout {
-                height: 60px;
+                height: 56px;
                 spacing: 4px;
 
-                for i in 24: Rectangle{
+                for i in 24 : Rectangle {
                     Rectangle {
                         width: parent.width;
                         height: root.is-playing
-                                ? + (Math.sin((i * 0.7 + root.phase) * 1rad)+ 1) * 22px
-                                : 4px;
+                            ? 8px + (Math.sin((i * 0.7 + root.phase) * 1rad) + 1) * 20px
+                            : 4px;
                         y: parent.height - self.height;
-                        background: mod(i, 2) == 0 ? #00f3ff: #ff0055;
-                        animate height { duration: 60ms;}
-                             
+                        background: mod(i, 2) == 0 ? #00f3ff : #ff0055;
+                        animate height { duration: 60ms; }
+                    }
+                }
+            }
+
+            // Progress bar + timestamps
+            VerticalLayout {
+                height: 30px;
+                spacing: 2px;
+
+                // Click anywhere on the bar to seek
+                Rectangle {
+                    height: 14px;
+
+                    // Track
+                    Rectangle {
+                        x: 0px;
+                        y: (parent.height - self.height) / 2;
+                        width: parent.width;
+                        height: 6px;
+                        background: #05070a;
+                        border-width: 1px;
+                        border-color: #1f293a;
+                    }
+
+                    // Fill (anchored to the left edge)
+                    Rectangle {
+                        x: 0px;
+                        y: (parent.height - self.height) / 2;
+                        width: parent.width * clamp(root.progress, 0, 1);
+                        height: 6px;
+                        background: #00f3ff;
+                        animate width { duration: 100ms; }
+                    }
+
+                    TouchArea {
+                        clicked => {
+                            root.seek(self.mouse-x / self.width);
                         }
                     }
                 }
-            
-            //Control Deck
+
+                HorizontalLayout {
+                    Text {
+                        text: root.elapsed-text;
+                        color: #00f3ff;
+                        font-family: "monospace";
+                        font-size: 11px;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text {
+                        text: root.total-text;
+                        color: #ff0055;
+                        font-family: "monospace";
+                        font-size: 11px;
+                    }
+                }
+            }
+
+            // Control deck
             HorizontalLayout {
                 height: 40px;
                 spacing: 12px;
@@ -147,19 +271,15 @@ export component AppWindow inherits Window {
                     label: "[ LOAD_FILE ]";
                     accent: #ff0055;
                     fill: #1a0b14;
-                    clicked => {root.load-file();}
+                    clicked => { root.load-file(); }
                 }
 
-
-                CyberButton {
-                    label: root.is-playing ? "[ PAUSE ]" : "[ EXECUTE ]";
-                    accent: #00f3ff;
-                    fill: #081c24;
-                    clicked => {root.toggle-play();}
+                PlayPauseButton {
+                    width: 72px;
+                    playing: root.is-playing;
+                    clicked => { root.toggle-play(); }
                 }
             }
-                
-            
         }
     }
 }
