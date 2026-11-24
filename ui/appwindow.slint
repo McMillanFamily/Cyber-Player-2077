@@ -1,0 +1,165 @@
+component CyberButton inherits Rectangle{
+    in property <string> label;
+    in property <color> accent;
+    in property <color> fill;
+    callback clicked();
+    
+    border-width: 1px;
+    border-color: accent;
+    background: ta.pressed ? accent.with-alpha(0.35)
+              : ta.has-hover ? accent.with-alpha(0.18)
+              : fill;
+    animate background { duration: 100ms;}
+    
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.label;
+        color: root.accent;
+        font-family: "monospace";
+        font-size: 14px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    } 
+
+    ta := TouchArea{
+        clicked => {root.clicked();}
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "CYBER-DECK // AUDIO";
+    width: 480px;
+    height: 280px;
+    no-frame: true;
+    background: #090a0f;
+
+    in-out property <string> track-name: "NO_SIGNAL // LOAD TRACK";
+    in-out property <bool> is-playing: false;
+
+    callback load-file();
+    callback toggle-play();
+    callback close-window();
+    //fired when the header is pressed: call winit's drag_window() form Rust
+    callback start-drag();
+    
+    //Phase drives the moving visualizer
+    property <float> phase: 0 ;
+    Timer{
+        interval: 60ms;
+        running: root.is-playing;
+        triggered => { root.phase = mod(root.phase + 0.4, 6.2832)}
+    }
+
+    // Outer neon border
+    Rectangle {
+        border-width: 2px;
+        border-color: #00f3ff;
+        background: #0d1017;
+
+        // Faux glow: faint inner border
+        Rectangle {
+            x: 3px;
+            y: 3px;
+            width: parent.width - 6px;
+            height: parent.height - 6px;
+            border-width: 1px;
+            border-color: #00f3ff.with-alpha(0.25);
+        }
+
+        VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
+
+            // Header bar (drag handle + close)
+            HorizontalLayout {
+                height: 24px;
+                spacing: 8px;
+
+                Rectangle {
+                    horizontal-stretch: 1;
+
+                    Text {
+                        width: parent.width;
+                        height: parent.height;
+                        text: "SYS.AUDIO.V1 // WAYLAND_NATIVE";
+                        color: #ff0055;
+                        font-family: "monospace";
+                        font-weight: 800;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }   
+
+                    TouchArea {
+                        pointer-event(e) => {
+                            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left){
+                                root.start-drag();
+                            }
+                        }
+                    }
+            
+                }
+                Rectangle {
+                    width: 24px;
+                    background: close-ta.has-hover ? #ff4d85 : #ff0055;
+
+                    Text {
+                        width: parent.width;
+                        height: parent.height;
+                        text: "X";
+                        color: #090a0f;
+                        font-weight: 900;
+                        horizontal-alignment: center;
+                        vertical-alignment: center; 
+                    }
+
+                    close-ta := TouchArea{
+                        clicked => {root.close-window();}
+                    }
+                }
+            }
+
+            // Visualizer
+            HorizontalLayout {
+                height: 60px;
+                spacing: 4px;
+
+                for i in 24: Rectangle{
+                    Rectangle {
+                        width: parent.width;
+                        height: root.is-playing
+                                ? + (Math.sin((i * 0.7 + root.phase) * 1rad)+ 1) * 22px
+                                : 4px;
+                        y: parent.height - self.height;
+                        background: mod(i, 2) == 0 ? #00f3ff: #ff0055;
+                        animate height { duration: 60ms;}
+                             
+                        }
+                    }
+                }
+            
+            //Control Deck
+            HorizontalLayout {
+                height: 40px;
+                spacing: 12px;
+
+                CyberButton {
+                    label: "[ LOAD_FILE ]";
+                    accent: #ff0055;
+                    fill: #1a0b14;
+                    clicked => {root.load-file();}
+                }
+
+
+                CyberButton {
+                    label: root.is-playing ? "[ PAUSE ]" : "[ EXECUTE ]";
+                    accent: #00f3ff;
+                    fill: #081c24;
+                    clicked => {root.toggle-play();}
+                }
+            }
+                
+            
+        }
+    }
+}

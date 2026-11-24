@@ -1,13 +1,15 @@
 [package]
-name = "Music-Player-2077"
+name = "cyber-deck"
 version = "0.1.0"
-edition = "2024"
-
+edition = "2021"
+ 
 [dependencies]
-slint = "1.9"
+# i-slint-backend-winit MUST be the same version as slint.
+slint = { version = "1.9", features = ["unstable-winit-030"] }
+i-slint-backend-winit = "1.9"
 rodio = "0.20"
 rfd = "0.15"
-
+ 
 [build-dependencies]
 slint-build = "1.9"
 

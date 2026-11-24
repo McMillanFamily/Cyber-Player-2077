@@ -3,16 +3,6 @@
 version = 4
 
 [[package]]
-name = "Music-Player-2077"
-version = "0.1.0"
-dependencies = [
- "rfd",
- "rodio",
- "slint",
- "slint-build",
-]
-
-[[package]]
 name = "ab_glyph"
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1075,6 +1065,17 @@ name = "cursor-icon"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
+
+[[package]]
+name = "cyber-deck"
+version = "0.1.0"
+dependencies = [
+ "i-slint-backend-winit",
+ "rfd",
+ "rodio",
+ "slint",
+ "slint-build",
+]
 
 [[package]]
 name = "dasp_sample"
@@ -4355,6 +4356,7 @@ dependencies = [
  "const-field-offset",
  "i-slint-backend-linuxkms",
  "i-slint-backend-selector",
+ "i-slint-backend-winit",
  "i-slint-common",
  "i-slint-core",
  "i-slint-core-macros",
