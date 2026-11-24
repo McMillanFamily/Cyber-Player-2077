@@ -14,9 +14,8 @@ Created as a learning project for me to learn rust
 
 ## How to run
 
-,,,
+```
 git clone https://github.com/McMillanfamily/Cyber-Player-2077
 Cd Cyber-Player-2077
 cargo run
-,,,
-
+```
