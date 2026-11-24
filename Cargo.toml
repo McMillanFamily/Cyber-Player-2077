@@ -4,3 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+slint = "1.9"
+rodio = "0.20"
+rfd = "0.15"
+
+[build-dependencies]
+slint-build = "1.9"
+
