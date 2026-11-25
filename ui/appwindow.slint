@@ -1,120 +1,154 @@
 // CYBER-DECK // AUDIO
-
-// Flat neon button with a hover/press glow
+//
+// Layout overview (top to bottom inside the neon frame):
+//   1. Header bar        - drag handle + close button
+//   2. Track readout     - current track name
+//   3. Visualizer        - 24 animated bars
+//   4. Progress bar      - click to seek, with elapsed / total time
+//   5. Control deck      - load file, load dir, prev, play/pause, next
+//   6. Volume bar        - click or drag to set the volume
+//
+// The Rust side talks to this file through the properties and callbacks
+// declared at the top of AppWindow (search for "Interface with Rust").
 
 //For who ever comes here next update this counter
-//I hate this 
+//I hate this
 //Hours wasted here 4
 
+// ---------------------------------------------------------------------------
+// CyberButton
+// A flat neon button with a hover / pressed glow. Reused for most buttons.
+// ---------------------------------------------------------------------------
 component CyberButton inherits Rectangle { //Cyber buttons YAY! :D
-    in property <string> label;
-    in property <color> accent;
-    in property <color> fill;
-    callback clicked();
+    in property <string> label;        // text shown on the button
+    in property <color> accentColor;   // colour of the border and the text
+    in property <color> fillColor;     // background colour when idle
+    callback clicked();                // fired when the button is clicked
 
     border-width: 1px;
-    border-color: accent;
-    background: ta.pressed ? accent.with-alpha(0.35)
-              : ta.has-hover ? accent.with-alpha(0.18)
-              : fill;
-    animate background { duration: 100ms; }
+    border-color: accentColor;
+
+    // Pressed is the brightest, hover is a softer tint, otherwise the idle fill.
+    background: touchArea.pressed ? accentColor.with-alpha(0.35)
+              : touchArea.has-hover ? accentColor.with-alpha(0.18)
+              : fillColor;
+    animate background { duration: 100ms; }   // smooth colour change
 
     Text {
+        // Fill the whole button so the text can be centred inside it
         width: parent.width;
         height: parent.height;
         text: root.label;
-        color: root.accent;
-        font-family: "monospace"; 
+        color: root.accentColor;
+        font-family: "monospace";
         font-size: 14px;
         horizontal-alignment: center;
         vertical-alignment: center;
     } //this looks so much like CSS
 
-    ta := TouchArea {
+    // Invisible layer on top that catches mouse input
+    touchArea := TouchArea {
         clicked => { root.clicked(); }
     }
 }
 
+// ---------------------------------------------------------------------------
+// PlayPauseButton
 // Play/pause button. The icons are drawn by hand so we don't depend on
 // whatever glyphs the system font happens to have.
+// ---------------------------------------------------------------------------
 component PlayPauseButton inherits Rectangle {
-    in property <bool> playing;
-    in property <color> accent: #00f3ff;
+    in property <bool> isPlaying;                  // true shows the pause icon
+    in property <color> accentColor: #00f3ff;      // border + icon colour
     callback clicked();
 
     border-width: 1px;
-    border-color: accent;
-    background: ta.pressed ? accent.with-alpha(0.35)
-              : ta.has-hover ? accent.with-alpha(0.18)
+    border-color: accentColor;
+    background: touchArea.pressed ? accentColor.with-alpha(0.35)
+              : touchArea.has-hover ? accentColor.with-alpha(0.18)
               : #081c24;
     animate background { duration: 100ms; }
 
-    // play triangle (nudged 2px right so it looks centered)
-    if !root.playing : Path {
+    // Play icon: a triangle pointing right.
+    // Only exists while paused. Nudged 2px right so it looks centred
+    // (a triangle's visual centre sits left of its bounding box centre).
+    if !root.isPlaying : Path {
         x: (parent.width - self.width) / 2 + 2px;
         y: (parent.height - self.height) / 2;
         width: 14px;
         height: 16px;
         viewbox-width: 100;
         viewbox-height: 100;
-        commands: "M 0 0 L 100 50 L 0 100 Z";
-        fill: root.accent;
+        commands: "M 0 0 L 100 50 L 0 100 Z";   // three points, then close the shape
+        fill: root.accentColor;
     }
 
-    // pause bars
-    if root.playing : Rectangle {
+    // Pause icon: two vertical bars. Only exist while playing.
+    // Left bar
+    if root.isPlaying : Rectangle {
         x: parent.width / 2 - 8px;
         y: parent.height / 2 - 8px;
         width: 5px;
         height: 16px;
-        background: root.accent;
+        background: root.accentColor;
     }
-    if root.playing : Rectangle {
+    // Right bar
+    if root.isPlaying : Rectangle {
         x: parent.width / 2 + 3px;
         y: parent.height / 2 - 8px;
         width: 5px;
         height: 16px;
-        background: root.accent;
+        background: root.accentColor; // I hate this 
     }
 
-    ta := TouchArea {
+    // Mouse input layer
+    touchArea := TouchArea {
         clicked => { root.clicked(); }
     }
 }
 
+// ---------------------------------------------------------------------------
+// AppWindow
+// The main (and only) window.
+// ---------------------------------------------------------------------------
 export component AppWindow inherits Window {
     title: "CYBER-DECK // AUDIO";
     width: 480px;
     height: 326px;
-    no-frame: true;
+    no-frame: true;          // we draw our own header, so no OS title bar
     background: #090a0f;
 
-    in-out property <string> track: "NO_SIGNAL // LOAD TRACK";
-    in-out property <bool> playing: false;
-    in-out property <float> prog: 0;       // how far through the song, 0 to 1
-    in-out property <string> elapsed: "0:00";
-    in-out property <string> total: "--:--";
-    in-out property <float> vol: 0.8;      // 0 to 1
+    // ---- Interface with Rust -------------------------------------------
+    // Rust writes these to update the UI (set_xxx) ...
+    in-out property <string> trackName: "NO_SIGNAL // LOAD TRACK";  // name shown in the readout
+    in-out property <bool> isPlaying: false;                        // drives icons + visualizer
+    in-out property <float> progress: 0;           // how far through the song, 0 to 1
+    in-out property <string> elapsedText: "0:00";  // time played so far
+    in-out property <string> totalText: "--:--";   // length of the song
+    in-out property <float> volume: 0.8;           // 0 to 1
 
-    callback loadFile();
-    callback loadDir();
-    callback togglePlay();
-    callback next();
-    callback prev();
-    callback close();
-    callback startDrag();
-    callback seek(float);                  // 0 to 1 along the bar
-    callback setVol(float);                // 0 to 1 along the bar
+    // ... and these tell Rust that the user did something (on_xxx)
+    callback loadFile();                   // user wants to pick a single file
+    callback loadDir();                    // user wants to pick a whole folder
+    callback togglePlay();                 // play / pause pressed
+    callback next();                       // skip to next track
+    callback prev();                       // go to previous track
+    callback closeWindow();                // X pressed
+    callback startDrag();                  // header pressed, start moving the window
+    callback seek(float);                  // 0 to 1 along the progress bar
+    callback setVolume(float);             // 0 to 1 along the volume bar
 
-    // ticks forward while playing, which keeps the visualizer moving
-    property <float> phase: 0;
+    // ---- Visualizer animation clock ------------------------------------
+    // Ticks forward while playing, which keeps the visualizer moving.
+    // It wraps around at one full sine cycle (about 6.28) so it never grows forever.
+    property <float> visualizerPhase: 0;
     Timer {
         interval: 60ms;
-        running: root.playing;
-        triggered => { root.phase = mod(root.phase + 0.4, 6.2832); }
+        running: root.isPlaying;       // only runs while music is playing
+        triggered => { root.visualizerPhase = mod(root.visualizerPhase + 0.4, 6.2832); }
     }
 
-    // outer neon frame
+    // ---- Outer neon frame ----------------------------------------------
     Rectangle {
         border-width: 2px;
         border-color: #00f3ff;
@@ -130,17 +164,20 @@ export component AppWindow inherits Window {
             border-color: #00f3ff.with-alpha(0.25);
         }
 
+        // Everything stacked vertically, with padding from the frame
         VerticalLayout {
             padding: 16px;
             spacing: 12px;
 
+            // ---- 1. Header bar -----------------------------------------
             // top bar: grab it to drag the window, X to close
             HorizontalLayout {
                 height: 24px;
                 spacing: 8px;
 
+                // Title text; the whole area doubles as the drag handle
                 Rectangle {
-                    horizontal-stretch: 1;
+                    horizontal-stretch: 1;   // take all the space the X button doesn't need
 
                     Text {
                         width: parent.width;
@@ -153,18 +190,20 @@ export component AppWindow inherits Window {
                         vertical-alignment: center;
                     }
 
+                    // Pressing anywhere on the title tells Rust to start a window drag
                     TouchArea {
-                        pointer-event(e) => {
-                            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                        pointer-event(event) => {
+                            if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
                                 root.startDrag();
                             }
                         }
                     }
                 }
 
+                // Close button (red square with an X)
                 Rectangle {
                     width: 24px;
-                    background: closeTa.has-hover ? #ff4d85 : #ff0055;
+                    background: closeTouchArea.has-hover ? #ff4d85 : #ff0055;   // lighter on hover
 
                     Text {
                         width: parent.width;
@@ -176,12 +215,13 @@ export component AppWindow inherits Window {
                         vertical-alignment: center;
                     }
 
-                    closeTa := TouchArea {
-                        clicked => { root.close(); }
+                    closeTouchArea := TouchArea {
+                        clicked => { root.closeWindow(); }
                     }
                 }
             }
 
+            // ---- 2. Track readout --------------------------------------
             // current track name
             Rectangle {
                 height: 60px;
@@ -191,35 +231,44 @@ export component AppWindow inherits Window {
 
                 Text {
                     x: 12px;
-                    width: parent.width - 24px;
+                    width: parent.width - 24px;   // 12px margin on each side
                     height: parent.height;
-                    text: root.track;
+                    text: root.trackName;
                     color: #00f3ff;
                     font-family: "monospace";
                     font-size: 15px;
                     vertical-alignment: center;
-                    overflow: elide;
+                    overflow: elide;              // long names get cut off with "..."
                 }
             }
 
+            // ---- 3. Visualizer -----------------------------------------
             // bouncing bars (just a sine wave, not real audio analysis)
             HorizontalLayout {
                 height: 56px;
                 spacing: 4px;
 
-                for i in 24 : Rectangle {
+                // One column per bar. barIndex counts 0..23
+                for barIndex in 24 : Rectangle {
+                    // The actual bar. The outer Rectangle is just a slot the layout
+                    // sizes for us; the inner one is positioned by hand so it can
+                    // sit on the bottom edge and grow upwards.
                     Rectangle {
                         width: parent.width;
-                        height: root.playing
-                            ? 8px + (Math.sin((i * 0.7 + root.phase) * 1rad) + 1) * 20px
+                        // While playing: height follows a sine wave that is offset
+                        // per bar and shifts over time. Paused: flat 4px stubs.
+                        height: root.isPlaying
+                            ? 8px + (Math.sin((barIndex * 0.7 + root.visualizerPhase) * 1rad) + 1) * 20px
                             : 4px;
-                        y: parent.height - self.height;
-                        background: mod(i, 2) == 0 ? #00f3ff : #ff0055;
+                        y: parent.height - self.height;   // pin the bottom edge to the floor
+                        // alternate cyan / pink bars
+                        background: mod(barIndex, 2) == 0 ? #00f3ff : #ff0055;
                         animate height { duration: 60ms; }
                     }
                 }
             }
 
+            // ---- 4. Progress bar ---------------------------------------
             // progress bar and the two timestamps under it
             VerticalLayout {
                 height: 30px;
@@ -227,12 +276,12 @@ export component AppWindow inherits Window {
 
                 // click anywhere on the bar to jump there
                 Rectangle {
-                    height: 14px;
+                    height: 14px;   // taller than the visible bar so it's easier to click
 
                     // empty track
                     Rectangle {
                         x: 0px;
-                        y: (parent.height - self.height) / 2;
+                        y: (parent.height - self.height) / 2;   // vertically centred
                         width: parent.width;
                         height: 6px;
                         background: #05070a;
@@ -242,14 +291,15 @@ export component AppWindow inherits Window {
 
                     // filled part, pinned to the left
                     Rectangle {
-                        x: 0px;
+                        x: 0px;   // without this, Slint centres it and it grows from the middle
                         y: (parent.height - self.height) / 2;
-                        width: parent.width * clamp(root.prog, 0, 1);
+                        width: parent.width * clamp(root.progress, 0, 1);   // 0..1 -> 0..full width
                         height: 6px;
                         background: #00f3ff;
                         animate width { duration: 100ms; }
                     }
 
+                    // Click position as a fraction of the bar width -> Rust does the seeking
                     TouchArea {
                         clicked => {
                             root.seek(self.mouse-x / self.width);
@@ -257,16 +307,17 @@ export component AppWindow inherits Window {
                     }
                 }
 
+                // Timestamps: elapsed on the left, total on the right
                 HorizontalLayout {
                     Text {
-                        text: root.elapsed;
+                        text: root.elapsedText;
                         color: #00f3ff;
                         font-family: "monospace";
                         font-size: 11px;
                     }
-                    Rectangle { horizontal-stretch: 1; }
+                    Rectangle { horizontal-stretch: 1; }   // spacer pushes the next text to the right edge
                     Text {
-                        text: root.total;
+                        text: root.totalText;
                         color: #ff0055;
                         font-family: "monospace";
                         font-size: 11px;
@@ -274,53 +325,60 @@ export component AppWindow inherits Window {
                 }
             }
 
+            // ---- 5. Control deck ---------------------------------------
             // buttons
             HorizontalLayout {
                 height: 40px;
                 spacing: 12px;
 
+                // No fixed width on the two load buttons, so they share the leftover space
                 CyberButton {
                     label: "[ LOAD_FILE ]";
-                    accent: #ff0055;
-                    fill: #1a0b14;
+                    accentColor: #ff0055;
+                    fillColor: #1a0b14;
                     clicked => { root.loadFile(); }
                 }
 
                 CyberButton {
                     label: "[ LOAD_DIR ]";
-                    accent: #ff0055;
-                    fill: #1a0b14;
+                    accentColor: #ff0055;
+                    fillColor: #1a0b14;
                     clicked => { root.loadDir(); }
                 }
 
+                // Previous track
                 CyberButton {
                     width: 40px;
                     label: "<<";
-                    accent: #00f3ff;
-                    fill: #081c24;
+                    accentColor: #00f3ff;
+                    fillColor: #081c24;
                     clicked => { root.prev(); }
                 }
 
+                // Play / pause (icon changes with isPlaying)
                 PlayPauseButton {
                     width: 72px;
-                    playing: root.playing;
+                    isPlaying: root.isPlaying;
                     clicked => { root.togglePlay(); }
                 }
 
+                // Next track
                 CyberButton {
                     width: 40px;
                     label: ">>";
-                    accent: #00f3ff;
-                    fill: #081c24;
+                    accentColor: #00f3ff;
+                    fillColor: #081c24;
                     clicked => { root.next(); }
                 }
             }
 
+            // ---- 6. Volume bar -----------------------------------------
             // volume: click or drag along the bar
             HorizontalLayout {
                 height: 20px;
                 spacing: 10px;
 
+                // "VOL" label on the left
                 Text {
                     width: 32px;
                     text: "VOL"; // VOLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLUUUUUUUUUUUUUUUUUUMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMEEEEEEEEEEEEEEEEEEEEE
@@ -330,6 +388,7 @@ export component AppWindow inherits Window {
                     vertical-alignment: center;     //Dont ask me why i had to remake this one block of code 50 times :)
                 }
 
+                // The bar itself takes all the space between the label and the percentage
                 Rectangle {
                     horizontal-stretch: 1;
 
@@ -348,41 +407,43 @@ export component AppWindow inherits Window {
                     Rectangle {
                         x: 0px;
                         y: (parent.height - self.height) / 2;
-                        width: parent.width * clamp(root.vol, 0, 1);
+                        width: parent.width * clamp(root.volume, 0, 1);
                         height: 8px;
                         background: #ff0055;
                     }
 
                     // the little handle
+                    // Centred on the end of the filled part; turns white while you hold it.
                     Rectangle {
-                        x: parent.width * clamp(root.vol, 0, 1) - self.width / 2;
+                        x: parent.width * clamp(root.volume, 0, 1) - self.width / 2;
                         y: (parent.height - self.height) / 2;
                         width: 6px;
                         height: 16px;
-                        background: volTa.pressed ? #ffffff : #ff4d85;
+                        background: volumeTouchArea.pressed ? #ffffff : #ff4d85;
                     }
 
-                    volTa := TouchArea {
+                    volumeTouchArea := TouchArea {
                         // a plain click sets the volume right away...
-                        pointer-event(e) => {
-                            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
-                                root.vol = clamp(self.mouse-x / self.width, 0, 1);
-                                root.setVol(root.vol);
+                        pointer-event(event) => {
+                            if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                                root.volume = clamp(self.mouse-x / self.width, 0, 1);
+                                root.setVolume(root.volume);   // tell Rust so the audio changes too
                             }
                         }
-                        // ...and dragging keeps updating it
+                        // ...and dragging keeps updating it this is horrible i hate rust and slint
                         moved => {
-                            if (self.pressed) {
-                                root.vol = clamp(self.mouse-x / self.width, 0, 1);
-                                root.setVol(root.vol);
+                            if (self.pressed) {   // only while the button is held down
+                                root.volume = clamp(self.mouse-x / self.width, 0, 1);
+                                root.setVolume(root.volume);
                             }
                         }
                     }
                 }
 
+                // Volume as a whole-number percentage, right-aligned
                 Text {
                     width: 40px;
-                    text: "\{Math.round(root.vol * 100)}%";
+                    text: "\{Math.round(root.volume * 100)}%";
                     color: #ff0055;
                     font-family: "monospace";
                     font-size: 11px;

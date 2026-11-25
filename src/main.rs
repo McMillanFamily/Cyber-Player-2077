@@ -132,15 +132,15 @@ fn startTrack(ui: &AppWindow, i: usize) -> bool {
                 .file_name()
                 .map(|n| n.to_string_lossy().to_uppercase())
                 .unwrap_or_default();
-            ui.set_track(format!("[{}/{}] {name}", i + 1, len).into());
-            ui.set_prog(0.0);
-            ui.set_elapsed("0:00".into());
-            ui.set_playing(true);
+            ui.set_trackName(format!("[{}/{}] {name}", i + 1, len).into());
+            ui.set_progress(0.0);
+            ui.set_elapsedText("0:00".into());
+            ui.set_isPlaying(true);
             true
         }
         Err(e) => {
-            ui.set_track(format!("LOAD_ERR // {e}").into());
-            ui.set_playing(false);
+            ui.set_trackName(format!("LOAD_ERR // {e}").into());
+            ui.set_isPlaying(false);
             false
         } //This caused a 4 hour fight with rust i fucking hate this 
     }
@@ -170,7 +170,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let ui = AppWindow::new()?;
 
     if let Err(e) = initPlayer() {
-        ui.set_track(format!("AUDIO_ERR // {e}").into());
+        ui.set_trackName(format!("AUDIO_ERR // {e}").into());
     }
 
     // --- Open a single file ---------------------------------------------
@@ -210,7 +210,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = weak.upgrade() else { return };
                     if tracks.is_empty() {
-                        ui.set_track("NO_AUDIO // FOLDER EMPTY".into());
+                        ui.set_trackName("NO_AUDIO // FOLDER EMPTY".into());
                     } else {
                         setList(&ui, tracks);
                     }
@@ -242,7 +242,7 @@ fn main() -> Result<(), slint::PlatformError> {
     });
 
     // --- Volume ---------------------------------------------------------
-    ui.on_setVol(|v| {
+    ui.on_setVolume(|v| {
         PLAYER.with(|p| {
             if let Some(pl) = p.borrow_mut().as_mut() {
                 pl.vol = v.clamp(0.0, 1.0);
@@ -274,7 +274,7 @@ fn main() -> Result<(), slint::PlatformError> {
             });
 
             if let Some(v) = playing {
-                ui.set_playing(v);
+                ui.set_isPlaying(v);
             }
         }
     });
@@ -293,7 +293,7 @@ fn main() -> Result<(), slint::PlatformError> {
     });
 
     // --- Close ----------------------------------------------------------
-    ui.on_close({
+    ui.on_closeWindow({
         let weak = ui.as_weak();
         move || {
             if let Some(ui) = weak.upgrade() {
@@ -329,23 +329,23 @@ fn main() -> Result<(), slint::PlatformError> {
             });
             let Some((pos, total, done)) = snap else { return };
 
-            ui.set_elapsed(fmtTime(pos).into());
+            ui.set_elapsedText(fmtTime(pos).into());
 
             match total {
                 Some(t) if !t.is_zero() => {
-                    ui.set_total(fmtTime(t).into());
-                    ui.set_prog((pos.as_secs_f32() / t.as_secs_f32()).min(1.0));
+                    ui.set_totalText(fmtTime(t).into());
+                    ui.set_progress((pos.as_secs_f32() / t.as_secs_f32()).min(1.0));
                 }
                 _ => {
-                    ui.set_total("--:--".into());
-                    ui.set_prog(0.0);
+                    ui.set_totalText("--:--".into());
+                    ui.set_progress(0.0);
                 }
             }
 
             // song ended -> play the next one, or stop if that was the last.
             // PLAYER isn't borrowed at this point so loading is safe.
-            if done && ui.get_playing() && !step(&ui, 1) {
-                ui.set_playing(false);
+            if done && ui.get_isPlaying() && !step(&ui, 1) {
+                ui.set_isPlaying(false);
             }
         }
     });
